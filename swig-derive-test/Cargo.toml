@@ -1,0 +1,10 @@
+[package]
+name = "swig-derive-test"
+version = "0.1.0"
+authors = ["Sam Scott <sam.scott89@gmail.com>"]
+
+[dependencies]
+swig-derive = { path = "../" }
+
+[lib]
+crate-type = ["cdylib", "staticlib"]

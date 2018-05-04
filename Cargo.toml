@@ -1,0 +1,15 @@
+[package]
+name = "swig-derive"
+version = "0.1.0"
+authors = ["Sam Scott <sam.scott89@gmail.com>"]
+
+[dependencies]
+syn = { version = "0.13.1", features = ["full"] }
+quote = "0.5.2"
+
+[lib]
+proc-macro = true
+
+[[bin]]
+name = "emswiggen"
+path = "src/main.rs"

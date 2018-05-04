@@ -1,0 +1,17 @@
+[package]
+name = "swiggen"
+version = "0.1.0"
+authors = ["Sam Scott <sam.scott89@gmail.com>"]
+
+[dependencies]
+cbindgen = "0.6"
+tempdir = "0.3.7"
+
+[[bin]]
+name = "swiggen"
+path = "src/main.rs"
+
+[dependencies.syn]
+version = "0.13"
+default-features = false
+features = ["parsing", "full", "extra-traits"]
