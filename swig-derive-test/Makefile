@@ -2,8 +2,8 @@ PKG_NAME=swig_derive_test
 
 default: bindings compile
 bindings:
-	cargo build
-	cargo run --manifest-path=../swiggen/Cargo.toml
+	cargo +nightly build
+	cargo +nightly run --manifest-path=../swiggen/Cargo.toml
 
 compile:
 	swig -python  -Wextra -c++ -o swig_wrap.cpp  swig.i

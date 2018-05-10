@@ -14,6 +14,24 @@ and partially just stumbling around procedural macros and syn.
 
 Using procedural macros, so of course this needs nightly for now.
 
+## Showcase
+
+Write Rust, get python/ruby/java/pick your poison. Try out the [example](#example):
+
+```bash
+cd swig-derive-test
+make
+python -c "import swig_derive_test as sdt; t = sdt.Test(42); print(t.get_field())"
+```
+^^^ `Test` is a Rust object, behaving like a native Python class.
+
+
+## Requirements
+
+Needs [`cargo-expand`](https://github.com/dtolnay/cargo-expand/) and [`swig`](http://swig.org/) installed.
+
+## Organisation
+
 [swiggen](swiggen/) contains the main parsing/generation code, and also a binary
 for generating the final binders.
 
@@ -23,9 +41,6 @@ calls out to swiggen.
 [swiggen-derive-test](swiggen-derive-test/) contains an example of the
 functionality.
 
-## Requirements
-
-Needs `cargo-expand` and `swig` installed.
 
 ## Example
 
