@@ -378,7 +378,7 @@ impl<'a> ToSwig for InternalFn<'a> {
 
         let name = if name.to_string() == "new" {
             ret_out = "".to_string();
-            out = "new swiggen::".to_string() + &out;
+            out = "new PKG_NAME::".to_string() + &out;
             self.base.expect("Cannot convert `Self` return type without provided base name.
                             Try: `#[swiggen(Foo)]` in macro").to_string()
         } else {
@@ -444,14 +444,12 @@ pub fn impl_extern_fn(base_name: &Option<syn::Ident>, ast: &syn::ItemFn) -> quot
 }
 
 
-pub fn gen_swig(src: &str) {
+pub fn gen_swig(pkg_name: &str, src: &str) {
     let mut tmp_file = File::create("swig.i").unwrap();
-
-    let pkg_name = "swiggen";
 
     tmp_file.write_all(format!("\
 %module {name}
-
+#define PKG_NAME {name}
 %include <std_vector.i>
 %include <stdint.i>
 %include <std_string.i>
@@ -530,7 +528,10 @@ pub fn gen_swig(src: &str) {
 namespace {name} {{
     {header}
 }}
-", name=pkg_name, header=hdr).as_bytes()).unwrap();
+
+%ignore {inject};
+%include \"bindings.h\";
+", name=pkg_name, header=hdr, inject=SwigTag::SwigInject).as_bytes()).unwrap();
 }
 
 fn get_derives(attrs: &[syn::Attribute]) -> Vec<String> {
@@ -563,7 +564,6 @@ pub fn split_out_externs(ast: &syn::ItemImpl) -> quote::Tokens {
     tokens.append_all(ast.items.iter().filter_map(|item| {
         match item {
             syn::ImplItem::Method(iim) => {
-                // println!("{:#?}", iim);
                 if iim.sig.abi.is_c(){
                     Some(item.into_tokens())
                 } else {
@@ -571,23 +571,19 @@ pub fn split_out_externs(ast: &syn::ItemImpl) -> quote::Tokens {
                     for attr in iim.attrs.iter() {
                         let attr = attr.interpret_meta();
                         match attr {
-                            Some(syn::Meta::List(ml)) => {
-                                if ml.ident == syn::Ident::from("swiggen"){
-                                    if let Some(v) = ml.nested.first().map(|p| p.into_value()) {
-                                        match v {
-                                            syn::NestedMeta::Meta(m) => {
-                                                let base_name = Some(m.name());
-                                                ret = Some(impl_extern_fn(&base_name, &iim_to_itemfn(iim.clone())));
-                                            },
-                                            _ => {}
-                                        }
+                            Some(syn::Meta::List(ml)) => if ml.ident == syn::Ident::from("swiggen") {
+                                if let Some(v) = ml.nested.first().map(|p| p.into_value()) {
+                                    match v {
+                                        syn::NestedMeta::Meta(m) => {
+                                            let base_name = Some(m.name());
+                                            ret = Some(impl_extern_fn(&base_name, &iim_to_itemfn(iim.clone())));
+                                        },
+                                        _ => {}
                                     }
                                 }
                             },
                             _ => {}
                         }
-                        // println!("{:?}", attr.interpret_meta());
-                        // println!("{:#?}", args);
                     }
                     ret
                 }

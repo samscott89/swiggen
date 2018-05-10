@@ -4,13 +4,11 @@ version = "0.1.0"
 authors = ["Sam Scott <sam.scott89@gmail.com>"]
 
 [dependencies]
+failure = "0.1"
 quote = "0.5.2"
+serde = "1.0"
 tempdir = "0.3.7"
-
-
-[[bin]]
-name = "swiggen"
-path = "src/main.rs"
+toml = "0.4"
 
 [dependencies.syn]
 version = "0.13"
@@ -20,3 +18,8 @@ features = ["clone-impls", "derive", "parsing", "printing", "full", "extra-trait
 [dependencies.cbindgen]
 version = "0.6"
 path = "../../cbindgen"
+
+
+[[bin]]
+name = "swiggen"
+path = "src/main.rs"

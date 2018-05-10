@@ -12,8 +12,6 @@ extern crate swiggen;
 
 use proc_macro::TokenStream;
 
-use syn::synom::Synom;
-
 #[proc_macro_derive(Swig, attributes(swig_derive))]
 pub fn swig_it(input: TokenStream) -> TokenStream {
     // Parse the string representation
@@ -29,10 +27,17 @@ pub fn swiggen(arg: TokenStream, input: TokenStream) -> TokenStream {
 
     // ignore this for now, we actually generate the functions later
     // using the `swiggen_hack` proc macro
-    let _new_meth = swiggen::impl_extern_fn(&base_name, &ast);
+    let new_meth = swiggen::impl_extern_fn(&base_name, &ast);
+    let tokens = if base_name.is_some() {
+        quote!{
+            #ast
+        }
+    } else {
+        quote!{
+            #ast
 
-    let tokens = quote!{
-        #ast
+            #new_meth
+        }
     };
     tokens.into()
 }
