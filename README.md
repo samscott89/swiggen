@@ -14,6 +14,15 @@ and partially just stumbling around procedural macros and syn.
 
 Using procedural macros, so of course this needs nightly for now.
 
+[swiggen](swiggen/) contains the main parsing/generation code, and also a binary
+for generating the final binders.
+
+[swiggen-derive](swiggen-derive/) contains the proc macro code, which simply
+calls out to swiggen.
+
+[swiggen-derive-test](swiggen-derive-test/) contains an example of the
+functionality.
+
 ## Requirements
 
 Needs `cargo-expand` and `swig` installed.
