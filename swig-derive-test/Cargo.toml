@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Sam Scott <sam.scott89@gmail.com>"]
 
 [dependencies]
-swig-derive = { path = "../" }
+swig-derive = { path = "../swig-derive" }
 
 [lib]
 crate-type = ["cdylib", "staticlib"]

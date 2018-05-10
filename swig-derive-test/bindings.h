@@ -9,11 +9,13 @@ struct Test2 {
 
 extern "C" {
 
-Test *__swig_default_Test();
+Test *__SWIG_INJECT_default_Test();
 
-void __swig_free_Test(Test *arg);
+uint32_t __SWIG_INJECT_ffi_get_field(const Test *wrapped_self);
 
-Test *__swig_test_function();
+Test *__SWIG_INJECT_ffi_new(uint32_t field);
+
+void __SWIG_INJECT_free_Test(Test *arg);
 
 Test2 test2_func();
 

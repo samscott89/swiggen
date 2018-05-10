@@ -1,10 +1,12 @@
 #![feature(proc_macro)]
+#![feature(proc_macro_lib)]
 
 #[macro_use]
 extern crate swig_derive;
-use swig_derive::swiggen;
+use swig_derive::{swiggen, swiggen_hack};
 
 #[derive(Default, Swig)]
+#[swig_derive(Default)]
 pub struct Test {
     pub field: u32
 }
@@ -14,24 +16,32 @@ pub struct Test2 {
     pub field: u32
 }
 
+
+swiggen_hack!{
 impl Test {
-    pub fn new() -> Self {
+    #[swiggen(Test)]
+    pub fn new(field: u32) -> Self {
         Self {
-            field: 12,
+            field: field,
         }
     }
-}
 
+    #[swiggen(Test)]
+    pub fn get_field(&self) -> u32 {
+        self.field
+    }
+}
+}
 
 #[swiggen]
 pub fn test_function() -> Test {
-    Test::new()
+    Test::new(5)
 }
 
 
 #[no_mangle]
 pub extern "C" fn test_value() -> u32 {
-    Test::new().field
+    Test::new(13).field
 }
 
 #[no_mangle]
@@ -40,3 +50,4 @@ pub extern "C" fn test2_func() -> Test2 {
         field: 12
     }
 }
+
