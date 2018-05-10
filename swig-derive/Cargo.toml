@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Sam Scott <sam.scott89@gmail.com>"]
 
 [dependencies]
-cbindgen = { path = "../../cbindgen" }
+cbindgen = { git = "https://github.com/samscott89/cbindgen" }
 swiggen = { path = "../swiggen" }
 syn = { version = "0.13.1", features = ["full"] }
 quote = "0.5.2"

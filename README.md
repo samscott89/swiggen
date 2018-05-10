@@ -96,7 +96,7 @@ we are done:
 >>> t = sdt.Test(12)
 >>> t.get_field()
 12
->>> t.different_test().get_field()
+>>> sdt.different_test().get_field()
 42
 >>> sdt.manual_extern()
 13
@@ -123,3 +123,5 @@ Things that don't really work:
  - Currently just hacked together by making loads of the cbindgen library public
  - Probably a million more problems
  - The code is not well written at all, everything is very hacky
+ - Unwraps everywhere. No real error handling. Also all hidden behind macros
+   so probably incredibly impenetrable errors.

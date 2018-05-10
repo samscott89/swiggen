@@ -17,8 +17,7 @@ features = ["clone-impls", "derive", "parsing", "printing", "full", "extra-trait
 
 [dependencies.cbindgen]
 version = "0.6"
-path = "../../cbindgen"
-
+git = "https://github.com/samscott89/cbindgen"
 
 [[bin]]
 name = "swiggen"
