@@ -19,11 +19,16 @@
 
 extern crate cbindgen;
 #[macro_use]
+extern crate log;
+extern crate proc_macro2;
+#[macro_use]
 extern crate quote;
 #[macro_use]
 extern crate syn;
 
+use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
+use quote::TokenStreamExt;
 
 use std::fmt;
 
@@ -81,12 +86,12 @@ pub trait ToSwig {
 /// A type implementing `AsExtern` can be converted into an type compatible with
 /// `extern "C"` functions.
 pub trait AsExtern {
-    fn as_extern(&self) -> quote::Tokens;
+    fn as_extern(&self) -> TokenStream;
 }
 
 impl AsExtern for syn::DeriveInput {
-    fn as_extern(&self) -> quote::Tokens {
-        let name = self.ident;
+    fn as_extern(&self) -> TokenStream {
+        let name = &self.ident;
         let free_name = swig_free(&name);
         // For an stuct we want to derive Swig for, we add a `free_Foo`
         // method so we can free it from SWIG code.
@@ -142,16 +147,16 @@ fn cbindgen_write<S: Source>(s: &S) -> String {
         let mut sw = SourceWriter::new(&mut buf, &cfg);
         s.write(&cfg, &mut sw);
     }
-    String::from_utf8(buf).unwrap()
+    String::from_utf8(buf).unwrap().replace("str", "char")
 }
 
 /// Hacky method to take a `&self` or `self` function argument and produce
 /// something compatible with `extern "C"` method. Since we can't use `self`, 
 /// we coerce this to a pointer, and call the arg `wrapped_self`.
 fn convert_self_type(arg: &syn::FnArg, base: &Option<syn::Ident>) -> syn::FnArg {
-    let base = base.expect("Cannot convert `self` arg without provided base name.
+    let base = base.clone().expect("Cannot convert `self` arg without provided base name.
                             Try: `#[swiggen(Foo)]` in macro");
-    let mut arg = arg.clone().into_tokens().to_string();
+    let mut arg = arg.clone().into_token_stream().to_string();
     arg = if arg.starts_with('&') {
         arg.replace("&", "*const ")
     } else {
@@ -164,10 +169,14 @@ fn convert_self_type(arg: &syn::FnArg, base: &Option<syn::Ident>) -> syn::FnArg 
 /// For inputs, if the type is a primitive (as defined by cbindgen), we don't 
 /// do anything. Otherwise, assume we will take it in as a pointer.
 fn convert_arg_type(syn::ArgCaptured { ref pat, ref ty, .. }: &syn::ArgCaptured) -> syn::FnArg {
-    if needs_ref(ty) {
-        parse_quote!(#pat: *const #ty)
+    if ty.clone().into_token_stream().to_string().ends_with("str") {
+        parse_quote!(#pat: *const c_char)
     } else {
-        parse_quote!(#pat: #ty)
+        if needs_ref(ty) {
+            parse_quote!(#pat: *const #ty)
+        } else {
+            parse_quote!(#pat: #ty)
+        }
     }
 }
 
@@ -178,10 +187,12 @@ fn convert_ret_type(rty: &syn::ReturnType, base: &Option<syn::Ident>) -> syn::Re
         syn::ReturnType::Default => syn::ReturnType::Default,
         syn::ReturnType::Type(_, ty) => {
             if needs_ref(ty) {
-                if ty.clone().into_tokens().to_string() == "Self" {
-                    let base = base.expect("Cannot convert `Self` return type without provided base name.
+                if ty.clone().into_token_stream().to_string() == "Self" {
+                    let base = base.clone().expect("Cannot convert `Self` return type without provided base name.
                             Try: `#[swiggen(Foo)]` in macro");
                     parse_quote!(-> *mut #base)
+                } else if ty.clone().into_token_stream().to_string() == "String" {
+                    parse_quote!(-> *mut c_char)
                 } else {
                     parse_quote!(-> *mut #ty)
                 }
@@ -202,15 +213,15 @@ fn needs_ref(ty: &syn::Type) -> bool {
 }
 
 impl<'a> AsExtern for InternalFn<'a> {
-    fn as_extern(&self) -> quote::Tokens {
+    fn as_extern(&self) -> TokenStream {
         // Messy blob of code to convert function name, arguments, types, 
         // return type and generate appropriate code.
         // Should be extracted out into smaller functions.
-        let name = self.fn_def.ident;
+        let name = &self.fn_def.ident;
         let ext_name = swig_fn(&name, "ffi");
-        let mut args = Vec::<quote::Tokens>::new();
+        let mut args = Vec::<TokenStream>::new();
         let mut caller = Vec::<syn::Ident>::new();
-        let mut caller_ref = Vec::<quote::Tokens>::new();
+        let mut caller_ref = Vec::<TokenStream>::new();
         self.fn_def.decl.inputs.iter().for_each(|ref arg| {
             match arg {
                 syn::FnArg::SelfRef(_) | syn::FnArg::SelfValue(_) => {
@@ -218,25 +229,27 @@ impl<'a> AsExtern for InternalFn<'a> {
                     // function so that `impl Foo { fn bar(&self); }`
                     // becomes `Foo_bar(wrapped_self: *const Foo)`.
                     let wrapped_self = convert_self_type(&arg, self.base);
-                    args.push(wrapped_self.into_tokens());
+                    args.push(wrapped_self.into_token_stream());
 
-                    let ws = syn::Ident::from("wrapped_self");
+                    let ws = syn::Ident::new("wrapped_self", Span::call_site());
                     caller.push(ws.clone());
                     caller_ref.push(quote!{@ref #ws});
                 }
                 syn::FnArg::Captured(ref ac) => {
                     let id = match &ac.pat {
                         syn::Pat::Ident(pi) => {
-                            pi.ident
+                            &pi.ident
                         },
                         _ => unimplemented!(),
                     };
-                    args.push(convert_arg_type(ac).into_tokens());
+                    args.push(convert_arg_type(ac).into_token_stream());
                     caller.push(id.clone());
 
                     // this later calls the appropriate macro function as to
                     // whether we need to do some pointer/box stuff
-                    if let syn::Type::Reference(_) = ac.ty {
+                    if ac.ty.clone().into_token_stream().to_string().ends_with("str") {
+                        caller_ref.push(quote!{@str #id});
+                    } else if let syn::Type::Reference(_) = ac.ty {
                         caller_ref.push(quote!{@ref #id});
                     } else {
                         caller_ref.push(quote!{@prim #id});
@@ -250,7 +263,9 @@ impl<'a> AsExtern for InternalFn<'a> {
         // Similar to the above, this later calls the appropriate macro function
         // as to whether we need to do some pointer/box stuff
         let res_ref = if let syn::ReturnType::Type(_, ref ty) = self.fn_def.decl.output {
-            if needs_ref(&ty) {
+            if ty.clone().into_token_stream().to_string() == "String" {
+                quote!{@str res}
+            } else if needs_ref(&ty) {
                 quote!{res}
             } else {
                 quote!{@prim res}
@@ -266,32 +281,7 @@ impl<'a> AsExtern for InternalFn<'a> {
             #[allow(non_snake_case)]
             #[no_mangle]
             pub extern "C" fn #ext_name(#(#args),*)  #out {
-                #[allow(unused_macros)]
-                macro_rules! ffi_ref {
-                    ($name:ident) => (
-                        let $name = unsafe {
-                            assert!(!$name.is_null());
-                            *$name
-                        };
-                    );
-                    (@ref $name:ident) => (
-                        let $name = unsafe {
-                            assert!(!$name.is_null());
-                            &*$name
-                        };
-                    );
-                    (@prim $name:ident) => {};
-                }
-                #[allow(unused_macros)]
-                macro_rules! box_ptr {
-                    ($x:expr) => (
-                        Box::into_raw(Box::new($x))
-                    );
-                    (@prim $x:expr) => (
-                        $x
-                    );
-                }
-                #(ffi_ref!(#caller_ref);),*
+                #(ffi_ref!(#caller_ref);)*
                 let res = #base::#name(#(#caller),*);
                 box_ptr!(#res_ref)
             }
@@ -303,7 +293,7 @@ impl<'a> AsExtern for InternalFn<'a> {
 
 /// Helper function to define the exported/mangled names.
 fn swig_fn(name: &syn::Ident, fn_name: &str) -> syn::Ident {
-    syn::Ident::from(format!("{}{}_{}", SwigTag::SwigInject, fn_name, name))
+    syn::Ident::new(&format!("{}{}_{}", SwigTag::SwigInject, fn_name, name), Span::call_site())
 }
 
 fn swig_free(name: &syn::Ident) -> syn::Ident {
@@ -321,7 +311,7 @@ impl ToSwig for syn::DeriveInput {
         let mut swigged = SwigTag::CodeStart.to_string();
         let mut swigged_h = SwigTag::HdrStart.to_string();
 
-        let name = self.ident;
+        let name = &self.ident;
         match &self.data {
             syn::Data::Struct(ref _ds) => {
                 // simple wrapper definition to wrap opaque pointer.
@@ -388,7 +378,7 @@ impl<'a> ToSwig for InternalFn<'a> {
         let mut swigged = SwigTag::CodeStart.to_string();
         let mut swigged_h = SwigTag::HdrStart.to_string();
 
-        let name = self.fn_def.ident;
+        let name = &self.fn_def.ident;
         let cb_fn = cbindgen::ir::Function::load(name.to_string(), 
                                                     &self.fn_def.decl,
                                                     true,
@@ -418,8 +408,10 @@ impl<'a> ToSwig for InternalFn<'a> {
         // Convert return type
         let mut out = cbindgen_write(&cb_fn.ret);
         if out == "Self" {
-            out = self.base.expect("Cannot convert `Self` return type without provided base name.
+            out = self.base.clone().expect("Cannot convert `Self` return type without provided base name.
                             Try: `#[swiggen(Foo)]` in macro").to_string();
+        } else if out == "String" {
+            out = "char *".to_string()
         }
         let mut ret_out = out.clone();
 
@@ -429,7 +421,7 @@ impl<'a> ToSwig for InternalFn<'a> {
             // Custom format for new functions
             ret_out = "".to_string();
             out = "new PKG_NAME::".to_string() + &out;
-            self.base.expect("Cannot convert `Self` return type without provided base name.
+            self.base.clone().expect("Cannot convert `Self` return type without provided base name.
                             Try: `#[swiggen(Foo)]` in macro").to_string()
         } else {
             name.to_string()
@@ -444,7 +436,7 @@ impl<'a> ToSwig for InternalFn<'a> {
         if self.base.is_none() {
             swigged.push_str(&format!("\
                 {ret_out} {name}({args}) {{
-                    return {out}(ffi::{ext_name}({caller}));
+                    return ({out})(ffi::{ext_name}({caller}));
                 }}"
                 , name=name, ext_name=ext_name, out=out, ret_out=ret_out, args=args, caller=caller));
         }
@@ -454,7 +446,7 @@ impl<'a> ToSwig for InternalFn<'a> {
             swigged_h.push_str(&format!("
                 %extend {base_name} {{
                     {ret_out} {name}({args}) {{
-                        return {out}(ffi::{ext_name}({caller}));
+                        return ({out})(ffi::{ext_name}({caller}));
                     }}
                 }};\n"
                 ,name=name, ext_name=ext_name, base_name=base, ret_out=ret_out, out=out, args=args, caller=caller));
@@ -473,17 +465,17 @@ impl<'a> ToSwig for InternalFn<'a> {
 
 
 /// Generate extern and SWIG code for a `#[derive(Swig)]` annotated item.
-pub fn impl_extern_it(ast: &syn::DeriveInput) -> quote::Tokens {
+pub fn impl_extern_it(ast: &syn::DeriveInput) -> TokenStream {
     let comment = ast.to_swig();
     let comment = format!("#[doc=\"{}\"] #[allow(non_camel_case_types)] struct {}{};", comment, SwigTag::SwigInject, ast.ident);
     let doc_comment: syn::ItemStruct = syn::parse_str(&comment).expect("failed to generate SWIG code correctly");
-    let mut tokens: quote::Tokens = doc_comment.into_tokens();
+    let mut tokens: TokenStream = doc_comment.into_token_stream();
     tokens.append_all(ast.as_extern().into_iter());
     tokens
 }
 
 /// Generate extern and SWIG code for a `#[swiggen]` annotated method.
-pub fn impl_extern_fn(base_name: &Option<syn::Ident>, ast: &syn::ItemFn) -> quote::Tokens {
+pub fn impl_extern_fn(base_name: &Option<syn::Ident>, ast: &syn::ItemFn) -> TokenStream {
     let ifn = InternalFn {
         base: base_name,
         fn_def: ast,
@@ -513,6 +505,8 @@ pub fn gen_swig(pkg_name: &str, src: &str) {
 %include <stdint.i>
 %include <std_string.i>
 
+%typemap(newfree) char * \"free_string($1);\";
+
 
 %{{
     namespace ffi {{
@@ -525,6 +519,7 @@ pub fn gen_swig(pkg_name: &str, src: &str) {
 ", name=pkg_name).as_bytes()).unwrap();
 
     let syntax = syn::parse_file(&src).expect("Unable to parse file");
+    trace!("Syntax: {:#?}", syntax);
     let mut hdr = String::new();
 
     // SWIG code is inside doc comments:
@@ -541,6 +536,7 @@ pub fn gen_swig(pkg_name: &str, src: &str) {
                 ii.items.iter().fold(Vec::new(), |mut acc, ref ii| {
                     match ii {
                         syn::ImplItem::Method(iim) => {
+                            debug!("{:#?}", iim);
                             if iim.sig.ident.to_string().starts_with(SwigTag::SwigInject.to_str()) {
                                 acc.extend_from_slice(&iim.attrs[..]);
                             }            
@@ -553,6 +549,7 @@ pub fn gen_swig(pkg_name: &str, src: &str) {
             syn::Item::Struct(syn::ItemStruct { attrs, ident, .. }) |
             syn::Item::Fn(syn::ItemFn { attrs, ident, ..}) => {
                 if ident.to_string().starts_with(SwigTag::SwigInject.to_str()) {
+                    debug!("{:#?}", attrs);
                     attrs.clone()
                 } else {
                     Vec::new()
@@ -576,6 +573,9 @@ pub fn gen_swig(pkg_name: &str, src: &str) {
 
                     tmp_file.write_all(&final_class.replace("\\n", "\n").as_bytes()).unwrap();
                     hdr += &final_hdr.replace("\\n", "\n");
+                    debug!("{}", final_hdr);
+                    debug!("{}", final_class);                    
+
                 }
             },
             _ => ()
@@ -622,18 +622,18 @@ fn get_derives(attrs: &[syn::Attribute]) -> Vec<String> {
 
 /// Parse a Rust file to extract any extern "C" functions or
 /// `#[swiggen]`-annotated methods and move these out of the impl block.
-pub fn split_out_externs(ast: &syn::ItemImpl) -> quote::Tokens {
-    let mut tokens = quote::Tokens::new();
+pub fn split_out_externs(ast: &syn::ItemImpl) -> TokenStream {
+    let mut tokens = TokenStream::new();
     tokens.append_all(ast.items.iter().filter_map(|item| {
         match item {
             syn::ImplItem::Method(iim) => {
                 if iim.sig.abi.is_c(){
-                    Some(item.into_tokens())
+                    Some(item.into_token_stream())
                 } else {
                     let mut ret = None;
                     for attr in iim.attrs.iter().filter_map(|a| a.interpret_meta()) {
                         match attr {
-                            syn::Meta::List(ml) => if ml.ident == syn::Ident::from("swiggen") {
+                            syn::Meta::List(ml) => if ml.ident == syn::Ident::new("swiggen", Span::call_site()) {
                                 if let Some(v) = ml.nested.first().map(|p| p.into_value()) {
                                     match v {
                                         syn::NestedMeta::Meta(m) => {

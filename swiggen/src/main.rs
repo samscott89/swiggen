@@ -1,4 +1,7 @@
 extern crate cbindgen;
+extern crate env_logger;
+#[macro_use]
+extern crate log;
 extern crate failure;
 #[macro_use]
 extern crate serde;
@@ -37,20 +40,23 @@ pub fn manifest(manifest_path: &Path) -> Result<Manifest, Error> {
     toml::from_str::<Manifest>(&s).map_err(|x| x.into())
 }
 pub fn main() {
+    env_logger::init();
     let manifest = manifest(&Path::new("./Cargo.toml")).unwrap();
-    // println!("{:#?}", metadata);
+
+    trace!("{:#?}", manifest);
     let package_name = &manifest.package.name.replace("-", "_");
 
     let tmp_dir = TempDir::new("cargo-exp").unwrap();
     let file_path = tmp_dir.path().join("expanded.rs");
     let mut tmp_file = File::create(&file_path).unwrap();
 
-    let cargo = env::var("CARGO").unwrap_or_else(|_| String::from("cargo"));
+    let cargo = env::var("CARGO").unwrap_or_else(|_| String::from("cargo +nightly"));
     
     let mut cmd = Command::new(cargo);
     cmd.arg("expand");
+    cmd.arg("--features=bindings");
     let output = cmd.output().unwrap();
-    // println!("Output: {:#?}", output);
+    trace!("Output: {:#?}", output);
     tmp_file.write_all(&output.stdout).unwrap();
 
     gen_bindings(&file_path);
