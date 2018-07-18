@@ -1,6 +1,7 @@
 #![crate_type = "proc-macro"]
 #![feature(proc_macro)]
 #![feature(proc_macro_lib)]
+#![recursion_limit="128"]
 
 /// Procedural macros to generate `extern "C"` functions and SWIG wrapper code
 /// from Rust code.
@@ -60,4 +61,61 @@ pub fn swiggen(arg: TokenStream, input: TokenStream) -> TokenStream {
 pub fn swiggen_hack(input: TokenStream) -> TokenStream {
     let ast: syn::ItemImpl = syn::parse(input).unwrap();
     swiggen::split_out_externs(&ast).into()
+}
+
+#[proc_macro]
+pub fn swiggen_prelude(_input: TokenStream) -> TokenStream {
+    // let ast: syn::ItemImpl = syn::parse(input).unwrap();
+    // swiggen::split_out_externs(&ast).into()
+    let tokens = quote! {
+        extern crate libc;
+        use libc::*;
+        use std::ffi::{CString, CStr};
+
+        #[no_mangle]
+        pub extern fn free_string(s: *mut c_char) {
+            unsafe {
+                if s.is_null() { return }
+                CString::from_raw(s)
+            };
+        }
+
+        #[allow(unused_macros)]
+        macro_rules! ffi_ref {
+            ($name:ident) => (
+                let $name = unsafe {
+                    assert!(!$name.is_null());
+                    *$name
+                };
+            );
+            (@ref $name:ident) => (
+                let $name = unsafe {
+                    assert!(!$name.is_null());
+                    &*$name
+                };
+            );
+            (@str $name:ident) => (
+                let $name = unsafe {
+                    assert!(!$name.is_null());
+                    CStr::from_ptr($name).to_str().unwrap()
+                };
+            );
+            (@prim $name:ident) => {};
+        }
+        #[allow(unused_macros)]
+        macro_rules! box_ptr {
+            ($x:expr) => (
+                Box::into_raw(Box::new($x))
+            );
+            (@prim $x:expr) => (
+                $x
+            );
+            (@str $x:expr) => (
+                CString::new($x).unwrap().into_raw()
+            );
+
+        }
+    };
+
+    tokens.into()
 }

@@ -39,18 +39,6 @@ class Test {
         ~Test();
     Test();
 };
-
-                %extend Test {
-                     Test(uint32_t field) {
-                        return new PKG_NAME::Test(ffi::__SWIG_INJECT_ffi_new(field));
-                    }
-                };
-
-                %extend Test {
-                    uint32_t get_field() {
-                        return uint32_t(ffi::__SWIG_INJECT_ffi_get_field($self->self));
-                    }
-                };
 Test different_test();
 }
 
